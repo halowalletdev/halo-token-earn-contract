@@ -23,7 +23,10 @@ contract HaloAirdrop is Ownable2Step, ReentrancyGuard, Pausable {
     uint256 public constant AIRDROP_FOR_GP = 2;
     uint256 public constant DURATION_PER_PHASE = 30 * 24 * 60 * 60; // 30days
     //
-    IERC20 public immutable HALO; // address of HALO token contract.
+    IERC20 public immutable HALO; // address of HALO token contract
+    //
+    // the percentage of tokens that can be claimed without locking, the rest will be transferred to treasury
+    uint256 public justClaimPct; // 0~100
     address public treasury; // accept the token of the penalty part
     uint256 public claimStartAt;
     AirdropDetail public airdropMP;
@@ -54,18 +57,20 @@ contract HaloAirdrop is Ownable2Step, ReentrancyGuard, Pausable {
         address owner_,
         IERC20 HALO_,
         address treasury_,
-        uint256 claimStartAt_
+        uint256 claimStartAt_,
+        uint256 justClaimPct_
     ) Ownable(owner_) {
         HALO = HALO_;
         treasury = treasury_;
         claimStartAt = claimStartAt_;
+        justClaimPct = justClaimPct_;
     }
 
-    // HMP Holders: "just claim part" or "lock all"
+    // HMP Holders: "just claim part" or "claim part + lock others"
     function claimOrLockForMP(
         bytes32[] calldata proof,
         uint256 amount,
-        bool isLock // whether to lock all
+        bool isLock // whether to lock
     ) external nonReentrant whenNotPaused {
         // verify parameters
         require(
@@ -81,16 +86,24 @@ contract HaloAirdrop is Ownable2Step, ReentrancyGuard, Pausable {
         isClaimedMP[msg.sender] = true;
 
         if (isLock) {
-            // lock all
+            // lock: claim part + lock others
+            uint256 toUserAmount = (amount * airdropMP.imdClaimPct) / 100;
+            SafeERC20.safeTransfer(IERC20(HALO), msg.sender, toUserAmount);
+            uint256 lockAmount = amount - toUserAmount;
             userInfoMP[msg.sender] = UserLockInfo({
                 lockStartAt: block.timestamp,
-                totalAmount: amount,
+                totalAmount: lockAmount,
                 claimedAmount: 0
             });
-            emit ClaimAndLock(msg.sender, 0, amount, AIRDROP_FOR_MP);
+            emit ClaimAndLock(
+                msg.sender,
+                toUserAmount,
+                lockAmount,
+                AIRDROP_FOR_MP
+            );
         } else {
             // just claim part
-            uint256 toUserAmount = (amount * airdropMP.imdClaimPct) / 100;
+            uint256 toUserAmount = (amount * justClaimPct) / 100;
             uint256 toTreasuryAmount = amount - toUserAmount;
             // transfer: address(this)-> 1. to user + 2. to treasury
             SafeERC20.safeTransfer(IERC20(HALO), msg.sender, toUserAmount);
@@ -290,6 +303,7 @@ contract HaloAirdrop is Ownable2Step, ReentrancyGuard, Pausable {
         uint256 totalUnlockPhases_,
         bool isMP
     ) external onlyOwner {
+        require(imdClaimPct_ <= 100, "INV_ARG");
         if (isMP) {
             airdropMP.root = root_;
             airdropMP.imdClaimPct = imdClaimPct_;
@@ -303,6 +317,11 @@ contract HaloAirdrop is Ownable2Step, ReentrancyGuard, Pausable {
 
     function setTreasury(address newTreasury) external onlyOwner {
         treasury = newTreasury;
+    }
+
+    function setJustClaimPct(uint256 newPct_) external onlyOwner {
+        require(newPct_ <= 100, "INV_ARG");
+        justClaimPct = newPct_;
     }
 
     function approveERC20(
