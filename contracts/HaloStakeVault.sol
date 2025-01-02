@@ -21,7 +21,7 @@ contract HaloStakeVault is Ownable2Step, ReentrancyGuard, EventsAndErrors {
         uint256 lastRewardBlock; // last block number that reward_tokens distribution occurs
         uint256 totalStaked; // sum of all users' stake amount
     }
-    uint256 public constant ACC_PRECISION = 1e18;
+    uint256 public immutable ACC_PRECISION;
     IERC20 public immutable stakeToken;
     IERC20 public immutable rewardToken;
     uint256 public rewardRatePerBlock; // reward tokens per block(3 seconds) to reward to pools e.g. 4*1e18
@@ -39,6 +39,7 @@ contract HaloStakeVault is Ownable2Step, ReentrancyGuard, EventsAndErrors {
     /////////////////// constructor ///////////////////
     constructor(
         address owner_,
+        uint256 accPrecision_,
         IERC20 stakeToken_,
         IERC20 rewardToken_,
         uint256 cooldownSeconds_,
@@ -47,6 +48,7 @@ contract HaloStakeVault is Ownable2Step, ReentrancyGuard, EventsAndErrors {
         address rewardVault_,
         uint256 startBlock // the block number when reward starts
     ) Ownable(owner_) {
+        ACC_PRECISION = accPrecision_; // max(10^18,10^(18+ stakeTokenDecimals- rewardTokenDecimals)
         stakeToken = stakeToken_;
         rewardToken = rewardToken_;
         cooldownSeconds = cooldownSeconds_;
